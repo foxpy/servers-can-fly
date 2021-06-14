@@ -1,7 +1,10 @@
 package main
 
 import(
+	"fmt"
+	"strings"
 	"net/http"
+	"crypto/rand"
 	"database/sql"
 	_ "modernc.org/sqlite"
 )
@@ -28,9 +31,39 @@ create table if not exists sessions(
 		}
 		register(db, name, password)
 	})
+	http.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PostFormValue("name")
+		password := r.PostFormValue("password")
+		token := auth(db, name, password)
+		fmt.Fprintf(w, "%s", token)
+	})
 	http.ListenAndServe(":8080", nil)
 }
 
 func register(db *sql.DB, name string, password string) {
 	db.Query(`insert into users(name, password) values(?1, ?2)`, name, password)
+}
+
+func gen_token(db *sql.DB, name string) string {
+	var b strings.Builder
+	r := make([]byte, 32)
+	rand.Read(r)
+	for i := 0; i < 32; i++ {
+		fmt.Fprintf(&b, "%02x", r[i])
+	}
+	token := b.String()
+	db.Exec(`insert into sessions(user_id, token) values((select user_id from users where name = ?1), ?2)`, name, token);
+	return token
+}
+
+func auth(db *sql.DB, name string, password string) string {
+	r := db.QueryRow(`select password from users where name = ?1`, name)
+	var actual_password string
+	if err := r.Scan(&actual_password); err != nil {
+		return "You are not registered"
+	} else if password == actual_password {
+		return gen_token(db, name)
+	} else {
+		return "Invalid password"
+	}
 }
