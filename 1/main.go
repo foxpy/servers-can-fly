@@ -45,7 +45,12 @@ create table if not exists sessions(
 		} else {
 			name := r.PostFormValue("name")
 			password := r.PostFormValue("password")
-			fmt.Fprint(w, auth(db, name, password))
+			if len(name) != 0 && len(password) != 0 {
+				fmt.Fprint(w, auth(db, name, password))
+			} else {
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				fmt.Fprint(w, "You MUST provide name AND password")
+			}
 		}
 	})
 	http.HandleFunc("/deauth", func(w http.ResponseWriter, r *http.Request) {
