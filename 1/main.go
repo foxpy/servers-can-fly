@@ -25,17 +25,22 @@ create table if not exists sessions(
 `)
 	http.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusBadRequest)
 			fmt.Fprint(w, "Invalid method, use POST")
 		} else {
 			name := r.PostFormValue("name")
 			password := r.PostFormValue("password")
 			if len(name) != 0 && len(password) != 0 {
 				register(db, name, password)
+			} else {
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				fmt.Fprint(w, "You MUST provide name AND password")
 			}
 		}
 	})
 	http.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusBadRequest)
 			fmt.Fprint(w, "Invalid method, use POST")
 		} else {
 			name := r.PostFormValue("name")
@@ -45,6 +50,7 @@ create table if not exists sessions(
 	})
 	http.HandleFunc("/deauth", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusBadRequest)
 			fmt.Fprint(w, "Invalid method, use POST")
 		} else {
 			token := r.PostFormValue("token")
@@ -53,6 +59,7 @@ create table if not exists sessions(
 	})
 	http.HandleFunc("/profile", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusBadRequest)
 			fmt.Fprint(w, "Invalid method, use POST")
 		} else {
 			token := r.PostFormValue("token")
