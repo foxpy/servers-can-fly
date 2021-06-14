@@ -1,7 +1,6 @@
 package main
 
 import(
-	"fmt"
 	"net/http"
 	"database/sql"
 	_ "modernc.org/sqlite"
@@ -11,8 +10,14 @@ func main() {
 	db, _ := sql.Open("sqlite", "users.db")
 	db.Exec(`
 create table if not exists users(
-	name text uniqie,
+	user_id integer primary key,
+	name text unique,
 	password text
+);
+create table if not exists sessions(
+	session_id integer primary key,
+	user_id integer references users,
+	token text unique
 );
 `)
 	http.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
@@ -27,6 +32,5 @@ create table if not exists users(
 }
 
 func register(db *sql.DB, name string, password string) {
-	fmt.Println(name, password)
-	db.Query(`insert into users values(?1, ?2)`, name, password)
+	db.Query(`insert into users(name, password) values(?1, ?2)`, name, password)
 }
