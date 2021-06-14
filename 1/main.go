@@ -24,27 +24,40 @@ create table if not exists sessions(
 );
 `)
 	http.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
-		name := r.PostFormValue("name")
-		password := r.PostFormValue("password")
-		if len(name) == 0 || len(password) == 0 {
-			return
+		if r.Method != http.MethodPost {
+			fmt.Fprint(w, "Invalid method, use POST")
+		} else {
+			name := r.PostFormValue("name")
+			password := r.PostFormValue("password")
+			if len(name) != 0 && len(password) != 0 {
+				register(db, name, password)
+			}
 		}
-		register(db, name, password)
 	})
 	http.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
-		name := r.PostFormValue("name")
-		password := r.PostFormValue("password")
-		token := auth(db, name, password)
-		fmt.Fprintf(w, "%s", token)
+		if r.Method != http.MethodPost {
+			fmt.Fprint(w, "Invalid method, use POST")
+		} else {
+			name := r.PostFormValue("name")
+			password := r.PostFormValue("password")
+			fmt.Fprint(w, auth(db, name, password))
+		}
 	})
 	http.HandleFunc("/deauth", func(w http.ResponseWriter, r *http.Request) {
-		token := r.PostFormValue("token")
-		deauth(db, token)
+		if r.Method != http.MethodPost {
+			fmt.Fprint(w, "Invalid method, use POST")
+		} else {
+			token := r.PostFormValue("token")
+			deauth(db, token)
+		}
 	})
 	http.HandleFunc("/profile", func(w http.ResponseWriter, r *http.Request) {
-		token := r.PostFormValue("token")
-		profile := getProfile(db, token)
-		fmt.Fprintf(w, "%s", profile)
+		if r.Method != http.MethodPost {
+			fmt.Fprint(w, "Invalid method, use POST")
+		} else {
+			token := r.PostFormValue("token")
+			fmt.Fprint(w, getProfile(db, token))
+		}
 	})
 	http.ListenAndServe(":8080", nil)
 }
