@@ -37,6 +37,11 @@ create table if not exists sessions(
 		token := auth(db, name, password)
 		fmt.Fprintf(w, "%s", token)
 	})
+	http.HandleFunc("/profile", func(w http.ResponseWriter, r*http.Request) {
+		token := r.PostFormValue("token")
+		profile := get_profile(db, token)
+		fmt.Fprintf(w, "%s", profile)
+	})
 	http.ListenAndServe(":8080", nil)
 }
 
@@ -54,6 +59,19 @@ func gen_token(db *sql.DB, name string) string {
 	token := b.String()
 	db.Exec(`insert into sessions(user_id, token) values((select user_id from users where name = ?1), ?2)`, name, token);
 	return token
+}
+
+func get_profile(db *sql.DB, token string) string {
+	r := db.QueryRow(`select name, password from (select name, password, token from users join sessions) where token = ?`, token)
+	var name string
+	var password string
+	if err := r.Scan(&name, &password); err != nil {
+		return "You are not authorized"
+	} else {
+		var b strings.Builder
+		fmt.Fprintf(&b, "Your name is %s and your password is %s", name, password)
+		return b.String()
+	}
 }
 
 func auth(db *sql.DB, name string, password string) string {
