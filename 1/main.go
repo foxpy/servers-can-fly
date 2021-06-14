@@ -37,7 +37,11 @@ create table if not exists sessions(
 		token := auth(db, name, password)
 		fmt.Fprintf(w, "%s", token)
 	})
-	http.HandleFunc("/profile", func(w http.ResponseWriter, r*http.Request) {
+	http.HandleFunc("/deauth", func(w http.ResponseWriter, r *http.Request) {
+		token := r.PostFormValue("token")
+		deauth(db, token)
+	})
+	http.HandleFunc("/profile", func(w http.ResponseWriter, r *http.Request) {
 		token := r.PostFormValue("token")
 		profile := get_profile(db, token)
 		fmt.Fprintf(w, "%s", profile)
@@ -84,4 +88,8 @@ func auth(db *sql.DB, name string, password string) string {
 	} else {
 		return "Invalid password"
 	}
+}
+
+func deauth(db *sql.DB, token string) {
+	db.Exec(`delete from sessions where token = ?1`, token)
 }
