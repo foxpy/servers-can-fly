@@ -1,12 +1,12 @@
 package main
 
-import(
-	"fmt"
-	"strings"
-	"net/http"
+import (
 	"crypto/rand"
 	"database/sql"
+	"fmt"
 	_ "modernc.org/sqlite"
+	"net/http"
+	"strings"
 )
 
 func main() {
@@ -43,7 +43,7 @@ create table if not exists sessions(
 	})
 	http.HandleFunc("/profile", func(w http.ResponseWriter, r *http.Request) {
 		token := r.PostFormValue("token")
-		profile := get_profile(db, token)
+		profile := getProfile(db, token)
 		fmt.Fprintf(w, "%s", profile)
 	})
 	http.ListenAndServe(":8080", nil)
@@ -53,7 +53,7 @@ func register(db *sql.DB, name string, password string) {
 	db.Query(`insert into users(name, password) values(?1, ?2)`, name, password)
 }
 
-func gen_token(db *sql.DB, name string) string {
+func genToken(db *sql.DB, name string) string {
 	var b strings.Builder
 	r := make([]byte, 32)
 	rand.Read(r)
@@ -61,11 +61,11 @@ func gen_token(db *sql.DB, name string) string {
 		fmt.Fprintf(&b, "%02x", r[i])
 	}
 	token := b.String()
-	db.Exec(`insert into sessions(user_id, token) values((select user_id from users where name = ?1), ?2)`, name, token);
+	db.Exec(`insert into sessions(user_id, token) values((select user_id from users where name = ?1), ?2)`, name, token)
 	return token
 }
 
-func get_profile(db *sql.DB, token string) string {
+func getProfile(db *sql.DB, token string) string {
 	r := db.QueryRow(`select name, password from (select name, password, token from users join sessions) where token = ?`, token)
 	var name string
 	var password string
@@ -80,11 +80,11 @@ func get_profile(db *sql.DB, token string) string {
 
 func auth(db *sql.DB, name string, password string) string {
 	r := db.QueryRow(`select password from users where name = ?1`, name)
-	var actual_password string
-	if err := r.Scan(&actual_password); err != nil {
+	var actualPassword string
+	if err := r.Scan(&actualPassword); err != nil {
 		return "You are not registered"
-	} else if password == actual_password {
-		return gen_token(db, name)
+	} else if password == actualPassword {
+		return genToken(db, name)
 	} else {
 		return "Invalid password"
 	}
