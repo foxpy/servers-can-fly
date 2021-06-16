@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rand"
+	"encoding/hex"
 	"database/sql"
 	"fmt"
 	_ "modernc.org/sqlite"
@@ -9,9 +10,7 @@ import (
 	"strings"
 )
 
-func main() {
-	db, _ := sql.Open("sqlite", "users.db")
-	db.Exec(`
+const schema = `
 create table if not exists users(
 	user_id integer primary key,
 	name text unique,
@@ -21,12 +20,19 @@ create table if not exists sessions(
 	session_id integer primary key,
 	user_id integer references users,
 	token text unique
-);
-`)
+);`
+
+func main() {
+	db, _ := sql.Open("sqlite", "users.db")
+	db.Exec(schema)
+	runServer(db)
+}
+
+func runServer(db *sql.DB) {
 	http.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprint(w, "Invalid method, use POST")
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			fmt.Fprintln(w, "Invalid method, use POST")
 		} else {
 			name := r.PostFormValue("name")
 			password := r.PostFormValue("password")
@@ -34,29 +40,29 @@ create table if not exists sessions(
 				register(db, name, password)
 			} else {
 				w.WriteHeader(http.StatusUnprocessableEntity)
-				fmt.Fprint(w, "You MUST provide name AND password")
+				fmt.Fprintln(w, "You MUST provide name AND password")
 			}
 		}
 	})
 	http.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprint(w, "Invalid method, use POST")
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			fmt.Fprintln(w, "Invalid method, use POST")
 		} else {
 			name := r.PostFormValue("name")
 			password := r.PostFormValue("password")
 			if len(name) != 0 && len(password) != 0 {
-				fmt.Fprint(w, auth(db, name, password))
+				fmt.Fprintln(w, auth(db, name, password))
 			} else {
 				w.WriteHeader(http.StatusUnprocessableEntity)
-				fmt.Fprint(w, "You MUST provide name AND password")
+				fmt.Fprintln(w, "You MUST provide name AND password")
 			}
 		}
 	})
 	http.HandleFunc("/deauth", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprint(w, "Invalid method, use POST")
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			fmt.Fprintln(w, "Invalid method, use POST")
 		} else {
 			token := r.PostFormValue("token")
 			deauth(db, token)
@@ -64,47 +70,43 @@ create table if not exists sessions(
 	})
 	http.HandleFunc("/profile", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprint(w, "Invalid method, use POST")
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			fmt.Fprintln(w, "Invalid method, use POST")
 		} else {
 			token := r.PostFormValue("token")
-			fmt.Fprint(w, getProfile(db, token))
+			fmt.Fprintln(w, getProfile(db, token))
 		}
 	})
 	http.ListenAndServe(":8080", nil)
 }
 
 func register(db *sql.DB, name string, password string) {
-	db.Query(`insert into users(name, password) values(?1, ?2)`, name, password)
+	db.Query(`insert into users(name, password) values(?1, ?2);`, name, password)
 }
 
 func genToken(db *sql.DB, name string) string {
-	var b strings.Builder
-	r := make([]byte, 32)
-	rand.Read(r)
-	for i := 0; i < 32; i++ {
-		fmt.Fprintf(&b, "%02x", r[i])
-	}
-	token := b.String()
-	db.Exec(`insert into sessions(user_id, token) values((select user_id from users where name = ?1), ?2)`, name, token)
+	rnd := make([]byte, 32)
+	rand.Read(rnd)
+	token := hex.EncodeToString(rnd)
+	db.Exec(`insert into sessions(user_id, token) values((select user_id from users where name = ?1), ?2);`, name, token)
 	return token
 }
 
 func getProfile(db *sql.DB, token string) string {
-	r := db.QueryRow(`select name, password from (select name, password, token from users join sessions) where token = ?`, token)
+	r := db.QueryRow(`select name, password from (select name, password, token from users join sessions) where token = ?;`, token)
 	var name string
 	var password string
 	if err := r.Scan(&name, &password); err != nil {
 		return "You are not authorized"
 	} else {
 		var b strings.Builder
-		fmt.Fprintf(&b, "Your name is %s and your password is %s", name, password)
+		fmt.Fprintf(&b, "Your name is %s and your password is %s\n", name, password)
 		return b.String()
 	}
 }
 
 func auth(db *sql.DB, name string, password string) string {
-	r := db.QueryRow(`select password from users where name = ?1`, name)
+	r := db.QueryRow(`select password from users where name = ?1;`, name)
 	var actualPassword string
 	if err := r.Scan(&actualPassword); err != nil {
 		return "You are not registered"
@@ -116,5 +118,5 @@ func auth(db *sql.DB, name string, password string) string {
 }
 
 func deauth(db *sql.DB, token string) {
-	db.Exec(`delete from sessions where token = ?1`, token)
+	db.Exec(`delete from sessions where token = ?1;`, token)
 }
