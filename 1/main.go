@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"log"
 	_ "modernc.org/sqlite"
 	"net/http"
 	"strings"
@@ -23,8 +24,14 @@ create table if not exists sessions(
 );`
 
 func main() {
-	db, _ := sql.Open("sqlite", "users.db")
-	db.Exec(schema)
+	db, err := sql.Open("sqlite", "users.db")
+	if err != nil {
+		log.Fatalln("Failed to open database file", err.Error())
+	}
+	_, err = db.Exec(schema)
+	if err != nil {
+		log.Fatalln("Failed to apply database schema", err.Error())
+	}
 	runServer(db)
 }
 
