@@ -88,17 +88,30 @@ func authHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	fmt.Fprintln(w, token)
+	w.Header().Set("Set-Cookie", token)
 }
 
 func deauthHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
-		fmt.Fprintln(w, "Invalid method, use POST")
+		fmt.Fprintln(w, "Invalid method, use GET")
 		return
 	}
-	token := r.PostFormValue("token")
-	_, err := db.Exec(`delete from sessions where token = ?1;`, token)
+	// here (and later in `profileHandler()`) I assume that r.Header values
+	// (arrays of strings) always have at least one element,
+	// documentation does not tell anything about it: https://golang.org/pkg/net/http/#Header
+	token, exists := r.Header["Cookie"]
+	if !exists {
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprintln(w, "Cookie must be supplied")
+		return
+	}
+	if len(token[0]) != 64 {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		fmt.Fprintln(w, token[0], "is not a valid token")
+		return
+	}
+	_, err := db.Exec(`delete from sessions where token = ?1;`, token[0])
 	// at this point, user has no idea if his token was valid before his
 	// request to deauthorization, but at least he can be sure that supplied
 	// token is no longer valid after receiving HTTP 200 query reply
@@ -109,15 +122,27 @@ func deauthHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 }
 
 func profileHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
-		fmt.Fprintln(w, "Invalid method, use POST")
+		fmt.Fprintln(w, "Invalid method, use GET")
 		return
 	}
-	token := r.PostFormValue("token")
+	token, exists := r.Header["Cookie"]
+	if !exists {
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprintln(w, "Cookie must be supplied")
+		return
+	}
+	// all this token validation must be moved to separate function
+	// if number of HTTP handlers increases in future…
+	if len(token[0]) != 64 {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		fmt.Fprintln(w, token[0], "is not a valid token")
+		return
+	}
 	var name string
 	var password string
-	row := db.QueryRow(`select name, password from (select * from users join sessions) where token = ?;`, token)
+	row := db.QueryRow(`select name, password from (select * from users join sessions) where token = ?;`, token[0])
 	if err := row.Scan(&name, &password); err != nil {
 		log.Println("Failed to query user data from database", err.Error())
 		w.WriteHeader(http.StatusInternalServerError)

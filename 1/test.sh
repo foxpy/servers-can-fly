@@ -10,15 +10,15 @@ else
 	echo "Test 1 succeeded"
 fi
 
-token="$(curl -X POST -F "name=foxpy" -F "password=qwertz" http://localhost:8080/auth 2>/dev/null)"
-if [[ "$token" =~ ^[0-9A-Fa-f]{64}$ ]]; then
+token="$(curl -v -F "name=foxpy" -F "password=qwertz" http://localhost:8080/auth 2>&1 | grep -oE '([A-Fa-f0-9]{64})')"
+if [[ "$token" ]]; then
 	echo "Test 2 succeeded"
 else
 	let failures+=1
 	echo "Test 2 failed: no access token granted after registration"
 fi
 
-profile="$(curl --data "token=$token" http://localhost:8080/profile 2>/dev/null)"
+profile="$(curl -H "Cookie: $token" http://localhost:8080/profile 2>/dev/null)"
 if [[ "$profile" != "Your name is foxpy and your password is qwertz" ]]; then
 	let failures+=1
 	echo "Test 3 failed: can't get profile after authorization"
@@ -26,7 +26,7 @@ else
 	echo "Test 3 succeeded"
 fi
 
-curl -X POST -F "token=$token" http://localhost:8080/deauth &>/dev/null
+curl -H "Cookie: $token" http://localhost:8080/deauth &>/dev/null
 db_token="$(printf "select token from sessions where token = '$token'" | sqlite3 users.db)"
 if [[ "$db_token" != "" ]]; then
 	let failures+=1
