@@ -2,8 +2,8 @@ package main
 
 import (
 	"crypto/rand"
-	"encoding/hex"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	_ "modernc.org/sqlite"
 	"net/http"
@@ -33,49 +33,49 @@ func runServer(db *sql.DB) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			fmt.Fprintln(w, "Invalid method, use POST")
-		} else {
-			name := r.PostFormValue("name")
-			password := r.PostFormValue("password")
-			if len(name) != 0 && len(password) != 0 {
-				register(db, name, password)
-			} else {
-				w.WriteHeader(http.StatusUnprocessableEntity)
-				fmt.Fprintln(w, "You MUST provide name AND password")
-			}
+			return
 		}
+		name := r.PostFormValue("name")
+		password := r.PostFormValue("password")
+		if len(name) == 0 || len(password) == 0 {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			fmt.Fprintln(w, "You MUST provide name AND password")
+			return
+		}
+		register(db, name, password)
 	})
 	http.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			fmt.Fprintln(w, "Invalid method, use POST")
-		} else {
-			name := r.PostFormValue("name")
-			password := r.PostFormValue("password")
-			if len(name) != 0 && len(password) != 0 {
-				fmt.Fprintln(w, auth(db, name, password))
-			} else {
-				w.WriteHeader(http.StatusUnprocessableEntity)
-				fmt.Fprintln(w, "You MUST provide name AND password")
-			}
+			return
 		}
+		name := r.PostFormValue("name")
+		password := r.PostFormValue("password")
+		if len(name) == 0 || len(password) == 0 {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			fmt.Fprintln(w, "You MUST provide name AND password")
+			return
+		}
+		fmt.Fprintln(w, auth(db, name, password))
 	})
 	http.HandleFunc("/deauth", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			fmt.Fprintln(w, "Invalid method, use POST")
-		} else {
-			token := r.PostFormValue("token")
-			deauth(db, token)
+			return
 		}
+		token := r.PostFormValue("token")
+		deauth(db, token)
 	})
 	http.HandleFunc("/profile", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			fmt.Fprintln(w, "Invalid method, use POST")
-		} else {
-			token := r.PostFormValue("token")
-			fmt.Fprintln(w, getProfile(db, token))
+			return
 		}
+		token := r.PostFormValue("token")
+		fmt.Fprintln(w, getProfile(db, token))
 	})
 	http.ListenAndServe(":8080", nil)
 }
@@ -98,11 +98,10 @@ func getProfile(db *sql.DB, token string) string {
 	var password string
 	if err := r.Scan(&name, &password); err != nil {
 		return "You are not authorized"
-	} else {
-		var b strings.Builder
-		fmt.Fprintf(&b, "Your name is %s and your password is %s\n", name, password)
-		return b.String()
 	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Your name is %s and your password is %s\n", name, password)
+	return b.String()
 }
 
 func auth(db *sql.DB, name string, password string) string {
@@ -110,11 +109,11 @@ func auth(db *sql.DB, name string, password string) string {
 	var actualPassword string
 	if err := r.Scan(&actualPassword); err != nil {
 		return "You are not registered"
-	} else if password == actualPassword {
-		return genToken(db, name)
-	} else {
+	}
+	if password != actualPassword {
 		return "Invalid password"
 	}
+	return genToken(db, name)
 }
 
 func deauth(db *sql.DB, token string) {
