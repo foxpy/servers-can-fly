@@ -8,6 +8,7 @@ import (
 	"log"
 	_ "modernc.org/sqlite"
 	"net/http"
+	"errors"
 )
 
 const schema = `
@@ -97,21 +98,13 @@ func deauthHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "Invalid method, use GET")
 		return
 	}
-	// here (and later in `profileHandler()`) I assume that r.Header values
-	// (arrays of strings) always have at least one element,
-	// documentation does not tell anything about it: https://golang.org/pkg/net/http/#Header
-	token, exists := r.Header["Cookie"]
-	if !exists {
+	token, err := tokenFromRequest(r)
+	if err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
-		fmt.Fprintln(w, "Cookie must be supplied")
+		fmt.Fprintln(w, err.Error())
 		return
 	}
-	if len(token[0]) != 64 {
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		fmt.Fprintln(w, token[0], "is not a valid token")
-		return
-	}
-	_, err := db.Exec(`delete from sessions where token = ?1;`, token[0])
+	_, err = db.Exec(`delete from sessions where token = ?1;`, token)
 	// at this point, user has no idea if his token was valid before his
 	// request to deauthorization, but at least he can be sure that supplied
 	// token is no longer valid after receiving HTTP 200 query reply
@@ -127,28 +120,36 @@ func profileHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "Invalid method, use GET")
 		return
 	}
-	token, exists := r.Header["Cookie"]
-	if !exists {
+	token, err := tokenFromRequest(r)
+	if err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
-		fmt.Fprintln(w, "Cookie must be supplied")
-		return
-	}
-	// all this token validation must be moved to separate function
-	// if number of HTTP handlers increases in future…
-	if len(token[0]) != 64 {
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		fmt.Fprintln(w, token[0], "is not a valid token")
+		fmt.Fprintln(w, err.Error())
 		return
 	}
 	var name string
 	var password string
-	row := db.QueryRow(`select name, password from (select * from users join sessions) where token = ?;`, token[0])
+	row := db.QueryRow(`select name, password from (select * from users join sessions) where token = ?;`, token)
 	if err := row.Scan(&name, &password); err != nil {
 		log.Println("Failed to query user data from database", err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	fmt.Fprintf(w, "Your name is %s and your password is %s\n", name, password)
+}
+
+func tokenFromRequest(r *http.Request) (string, error) {
+	// here I assume that r.Header values (arrays of strings) always have at least one element,
+	// documentation does not tell anything about it: https://golang.org/pkg/net/http/#Header
+	cookie, exists := r.Header["Cookie"]
+	if !exists {
+		return "", errors.New("Cookie with access token must be supplied")
+	}
+	var token string
+	fmt.Sscanf(cookie[0], "sessionToken=%s", &token)
+	if len(token) != 64 {
+		return "", errors.New("Token length is invalid")
+	}
+	return token, nil
 }
 
 func genTokenAndStore(db *sql.DB, name string) (string, error) {
@@ -162,7 +163,7 @@ func genTokenAndStore(db *sql.DB, name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return token, nil
+	return fmt.Sprintf("sessionToken=%s", token), nil
 }
 
 func auth(db *sql.DB, name string, password string) (string, error) {

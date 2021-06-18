@@ -18,7 +18,7 @@ else
 	echo "Test 2 failed: no access token granted after registration"
 fi
 
-profile="$(curl -H "Cookie: $token" http://localhost:8080/profile 2>/dev/null)"
+profile="$(curl -H "Cookie: sessionToken=$token" http://localhost:8080/profile 2>/dev/null)"
 if [[ "$profile" != "Your name is foxpy and your password is qwertz" ]]; then
 	let failures+=1
 	echo "Test 3 failed: can't get profile after authorization"
@@ -26,7 +26,7 @@ else
 	echo "Test 3 succeeded"
 fi
 
-curl -H "Cookie: $token" http://localhost:8080/deauth &>/dev/null
+curl -H "Cookie: sessionToken=$token" http://localhost:8080/deauth &>/dev/null
 db_token="$(printf "select token from sessions where token = '$token'" | sqlite3 users.db)"
 if [[ "$db_token" != "" ]]; then
 	let failures+=1
