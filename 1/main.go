@@ -4,11 +4,11 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
 	_ "modernc.org/sqlite"
 	"net/http"
-	"errors"
 )
 
 const schema = `
