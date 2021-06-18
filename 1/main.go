@@ -8,7 +8,6 @@ import (
 	"log"
 	_ "modernc.org/sqlite"
 	"net/http"
-	"strings"
 )
 
 const schema = `
@@ -56,7 +55,18 @@ func registerHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "You MUST provide name AND password")
 		return
 	}
-	db.Query(`insert into users(name, password) values(?1, ?2);`, name, password)
+	_, err := db.Exec(`insert into users(name, password) values(?1, ?2);`, name, password)
+	if err != nil {
+		// there should be a clean way to check if user is already registered
+		// a naive approach (select, check and then register) is not a transaction,
+		// so it is prune to race conditions, even in this simple application
+		// without even a functionality to delete your account
+		// I should research SQL transactions and SQL error code returning
+		// but it probably falls out of topic of this assignment
+		// HTTP 500 seems to be good enough for now
+		log.Printf("Failed to register user '%s' with password '%s': %s\n", name, password, err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+	}
 }
 
 func authHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
@@ -72,7 +82,13 @@ func authHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "You MUST provide name AND password")
 		return
 	}
-	fmt.Fprintln(w, auth(db, name, password))
+	token, err := auth(db, name, password)
+	if err != nil {
+		log.Println("Failed to authorize user", name, ":", err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	fmt.Fprintln(w, token)
 }
 
 func deauthHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
@@ -82,7 +98,14 @@ func deauthHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := r.PostFormValue("token")
-	db.Exec(`delete from sessions where token = ?1;`, token)
+	_, err := db.Exec(`delete from sessions where token = ?1;`, token)
+	// at this point, user has no idea if his token was valid before his
+	// request to deauthorization, but at least he can be sure that supplied
+	// token is no longer valid after receiving HTTP 200 query reply
+	if err != nil {
+		log.Printf("Failed to delete access token '%s' from database: %s\n", token, err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+	}
 }
 
 func profileHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
@@ -92,37 +115,44 @@ func profileHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := r.PostFormValue("token")
-	fmt.Fprintln(w, getProfile(db, token))
-}
-
-func genToken(db *sql.DB, name string) string {
-	rnd := make([]byte, 32)
-	rand.Read(rnd)
-	token := hex.EncodeToString(rnd)
-	db.Exec(`insert into sessions(user_id, token) values((select user_id from users where name = ?1), ?2);`, name, token)
-	return token
-}
-
-func getProfile(db *sql.DB, token string) string {
-	r := db.QueryRow(`select name, password from (select name, password, token from users join sessions) where token = ?;`, token)
 	var name string
 	var password string
-	if err := r.Scan(&name, &password); err != nil {
-		return "You are not authorized"
+	row := db.QueryRow(`select name, password from (select * from users join sessions) where token = ?;`, token)
+	if err := row.Scan(&name, &password); err != nil {
+		log.Println("Failed to query user data from database", err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "Your name is %s and your password is %s\n", name, password)
-	return b.String()
+	fmt.Fprintf(w, "Your name is %s and your password is %s\n", name, password)
 }
 
-func auth(db *sql.DB, name string, password string) string {
+func genTokenAndStore(db *sql.DB, name string) (string, error) {
+	rnd := make([]byte, 32)
+	_, err := rand.Read(rnd)
+	if err != nil {
+		return "", err
+	}
+	token := hex.EncodeToString(rnd)
+	_, err = db.Exec(`insert into sessions(user_id, token) values((select user_id from users where name = ?1), ?2);`, name, token)
+	if err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+func auth(db *sql.DB, name string, password string) (string, error) {
 	r := db.QueryRow(`select password from users where name = ?1;`, name)
 	var actualPassword string
-	if err := r.Scan(&actualPassword); err != nil {
-		return "You are not registered"
+	err := r.Scan(&actualPassword)
+	if err != nil {
+		return "", err
 	}
 	if password != actualPassword {
-		return "Invalid password"
+		return "Invalid password", nil
 	}
-	return genToken(db, name)
+	token, err := genTokenAndStore(db, name)
+	if err != nil {
+		return "", err
+	}
+	return token, nil
 }
