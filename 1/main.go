@@ -36,59 +36,63 @@ func main() {
 }
 
 func runServer(db *sql.DB) {
-	http.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			fmt.Fprintln(w, "Invalid method, use POST")
-			return
-		}
-		name := r.PostFormValue("name")
-		password := r.PostFormValue("password")
-		if len(name) == 0 || len(password) == 0 {
-			w.WriteHeader(http.StatusUnprocessableEntity)
-			fmt.Fprintln(w, "You MUST provide name AND password")
-			return
-		}
-		register(db, name, password)
-	})
-	http.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			fmt.Fprintln(w, "Invalid method, use POST")
-			return
-		}
-		name := r.PostFormValue("name")
-		password := r.PostFormValue("password")
-		if len(name) == 0 || len(password) == 0 {
-			w.WriteHeader(http.StatusUnprocessableEntity)
-			fmt.Fprintln(w, "You MUST provide name AND password")
-			return
-		}
-		fmt.Fprintln(w, auth(db, name, password))
-	})
-	http.HandleFunc("/deauth", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			fmt.Fprintln(w, "Invalid method, use POST")
-			return
-		}
-		token := r.PostFormValue("token")
-		deauth(db, token)
-	})
-	http.HandleFunc("/profile", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			fmt.Fprintln(w, "Invalid method, use POST")
-			return
-		}
-		token := r.PostFormValue("token")
-		fmt.Fprintln(w, getProfile(db, token))
-	})
+	http.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) { registerHandler(db, w, r) })
+	http.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) { authHandler(db, w, r) })
+	http.HandleFunc("/deauth", func(w http.ResponseWriter, r *http.Request) { deauthHandler(db, w, r) })
+	http.HandleFunc("/profile", func(w http.ResponseWriter, r *http.Request) { profileHandler(db, w, r) })
 	http.ListenAndServe(":8080", nil)
 }
 
-func register(db *sql.DB, name string, password string) {
+func registerHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		fmt.Fprintln(w, "Invalid method, use POST")
+		return
+	}
+	name := r.PostFormValue("name")
+	password := r.PostFormValue("password")
+	if len(name) == 0 || len(password) == 0 {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		fmt.Fprintln(w, "You MUST provide name AND password")
+		return
+	}
 	db.Query(`insert into users(name, password) values(?1, ?2);`, name, password)
+}
+
+func authHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		fmt.Fprintln(w, "Invalid method, use POST")
+		return
+	}
+	name := r.PostFormValue("name")
+	password := r.PostFormValue("password")
+	if len(name) == 0 || len(password) == 0 {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		fmt.Fprintln(w, "You MUST provide name AND password")
+		return
+	}
+	fmt.Fprintln(w, auth(db, name, password))
+}
+
+func deauthHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		fmt.Fprintln(w, "Invalid method, use POST")
+		return
+	}
+	token := r.PostFormValue("token")
+	db.Exec(`delete from sessions where token = ?1;`, token)
+}
+
+func profileHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		fmt.Fprintln(w, "Invalid method, use POST")
+		return
+	}
+	token := r.PostFormValue("token")
+	fmt.Fprintln(w, getProfile(db, token))
 }
 
 func genToken(db *sql.DB, name string) string {
@@ -121,8 +125,4 @@ func auth(db *sql.DB, name string, password string) string {
 		return "Invalid password"
 	}
 	return genToken(db, name)
-}
-
-func deauth(db *sql.DB, token string) {
-	db.Exec(`delete from sessions where token = ?1;`, token)
 }
