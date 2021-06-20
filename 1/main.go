@@ -56,15 +56,24 @@ func registerHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "You MUST provide name AND password")
 		return
 	}
-	_, err := db.Exec(`insert into users(name, password) values(?1, ?2);`, name, password)
+	isAlreadyRegistered, err := isUserRegistered(db, name)
 	if err != nil {
-		// there should be a clean way to check if user is already registered
-		// a naive approach (select, check and then register) is not a transaction,
-		// so it is prune to race conditions, even in this simple application
-		// without even a functionality to delete your account
-		// I should research SQL transactions and SQL error code returning
-		// but it probably falls out of topic of this assignment
-		// HTTP 500 seems to be good enough for now
+		log.Printf("Failed to check if user '%s' is registered in database: %s\n", name, err.Error())
+		// at this point, we can't really tell anything useful to users
+		// so we just let them enjoy classic HTTP 500
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	if isAlreadyRegistered {
+		// I __really__ don't know a good HTTP error code for this case
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		fmt.Fprintln(w, "You are already registered")
+		return
+	}
+	// there is a possible (yet harmless, because of database UNIQUE constraint) data race:
+	// user may register during processing of this request
+	_, err = db.Exec(`insert into users(name, password) values(?1, ?2);`, name, password)
+	if err != nil {
 		log.Printf("Failed to register user '%s' with password '%s': %s\n", name, password, err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
 	}
@@ -83,7 +92,48 @@ func authHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "You MUST provide name AND password")
 		return
 	}
-	token, err := auth(db, name, password)
+	isRegistered, err := isUserRegistered(db, name)
+	if err != nil {
+		log.Printf("Failed to check if user '%s' is registered in database: %s\n", name, err.Error())
+		// at this point, we can't really tell anything useful to users
+		// so we just let them enjoy classic HTTP 500
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	if !isRegistered {
+		// I couldn't pick a proper error code for this one
+		// There is probably a better choice which I do not know about
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Println(w, "You are not registered")
+		return
+	}
+	// from this point, there is a possible harmless data race
+	// if user deletes their account during processing of this request.
+	// however, this application does not implement account
+	// deletion (at least for now), so this race will never happen
+	actualPassword, err := getUserPassword(db, name)
+	if err != nil {
+		log.Printf("Failed to get user '%s' password from database: %s\n", name, err.Error())
+		// at this point, we can't really tell anything useful to users
+		// so we just let them enjoy classic HTTP 500
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	if password != actualPassword {
+		// I couldn't pick a proper error code for this one
+		// There is probably a better choice which I do not know about
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		fmt.Fprintln(w, "Invalid password")
+		return
+	}
+	token, err := genTokenAndStore(db, name)
+	if err != nil {
+		log.Println("Failed to generate access token for user", name, ":", err.Error())
+		// at this point, we can't return anything fancier than just plain HTTP 500
+		// I don't think piping all internal errors is a good idea
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 	if err != nil {
 		log.Println("Failed to authorize user", name, ":", err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
@@ -152,6 +202,30 @@ func tokenFromRequest(r *http.Request) (string, error) {
 	return token, nil
 }
 
+func getUserPassword(db *sql.DB, name string) (string, error) {
+	row := db.QueryRow(`select password from users where name = ?1;`, name)
+	var password string
+	err := row.Scan(&password)
+	if err != nil {
+		return "", err
+	}
+	return password, nil
+}
+
+func isUserRegistered(db *sql.DB, name string) (bool, error) {
+	row := db.QueryRow(`select count(user_id) from users where name = ?1;`, name)
+	var cnt uint64
+	err := row.Scan(&cnt)
+	if err != nil {
+		return false, err
+	}
+	if cnt > 1 {
+		// this should never happen because of UNIQUE constraint
+		return false, errors.New(fmt.Sprintln("Database UNIQUE constraint is violated, there is", cnt, "users with name", name))
+	}
+	return cnt == 1, nil
+}
+
 func genTokenAndStore(db *sql.DB, name string) (string, error) {
 	rnd := make([]byte, 32)
 	_, err := rand.Read(rnd)
@@ -164,21 +238,4 @@ func genTokenAndStore(db *sql.DB, name string) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("sessionToken=%s", token), nil
-}
-
-func auth(db *sql.DB, name string, password string) (string, error) {
-	r := db.QueryRow(`select password from users where name = ?1;`, name)
-	var actualPassword string
-	err := r.Scan(&actualPassword)
-	if err != nil {
-		return "", err
-	}
-	if password != actualPassword {
-		return "Invalid password", nil
-	}
-	token, err := genTokenAndStore(db, name)
-	if err != nil {
-		return "", err
-	}
-	return token, nil
 }
