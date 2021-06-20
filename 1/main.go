@@ -40,7 +40,10 @@ func runServer(db *sql.DB) {
 	http.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) { authHandler(db, w, r) })
 	http.HandleFunc("/deauth", func(w http.ResponseWriter, r *http.Request) { deauthHandler(db, w, r) })
 	http.HandleFunc("/profile", func(w http.ResponseWriter, r *http.Request) { profileHandler(db, w, r) })
-	http.ListenAndServe(":8080", nil)
+	err := http.ListenAndServe(":8080", nil)
+	if err != http.ErrServerClosed {
+		log.Fatalf("Failed to run HTTP server: %s", err.Error())
+	}
 }
 
 func registerHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
@@ -58,7 +61,7 @@ func registerHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 	}
 	isAlreadyRegistered, err := isUserRegistered(db, name)
 	if err != nil {
-		log.Printf("Failed to check if user '%s' is registered in database: %s\n", name, err.Error())
+		log.Printf("Failed to check if user '%s' is registered in database: %s", name, err.Error())
 		// at this point, we can't really tell anything useful to users
 		// so we just let them enjoy classic HTTP 500
 		w.WriteHeader(http.StatusInternalServerError)
@@ -74,7 +77,7 @@ func registerHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 	// user may register during processing of this request
 	_, err = db.Exec(`insert into users(name, password) values(?1, ?2);`, name, password)
 	if err != nil {
-		log.Printf("Failed to register user '%s' with password '%s': %s\n", name, password, err.Error())
+		log.Printf("Failed to register user '%s' with password '%s': %s", name, password, err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 }
@@ -94,7 +97,7 @@ func authHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 	}
 	isRegistered, err := isUserRegistered(db, name)
 	if err != nil {
-		log.Printf("Failed to check if user '%s' is registered in database: %s\n", name, err.Error())
+		log.Printf("Failed to check if user '%s' is registered in database: %s", name, err.Error())
 		// at this point, we can't really tell anything useful to users
 		// so we just let them enjoy classic HTTP 500
 		w.WriteHeader(http.StatusInternalServerError)
@@ -113,7 +116,7 @@ func authHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 	// deletion (at least for now), so this race will never happen
 	actualPassword, err := getUserPassword(db, name)
 	if err != nil {
-		log.Printf("Failed to get user '%s' password from database: %s\n", name, err.Error())
+		log.Printf("Failed to get user '%s' password from database: %s", name, err.Error())
 		// at this point, we can't really tell anything useful to users
 		// so we just let them enjoy classic HTTP 500
 		w.WriteHeader(http.StatusInternalServerError)
@@ -159,7 +162,7 @@ func deauthHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 	// request to deauthorization, but at least he can be sure that supplied
 	// token is no longer valid after receiving HTTP 200 query reply
 	if err != nil {
-		log.Printf("Failed to delete access token '%s' from database: %s\n", token, err.Error())
+		log.Printf("Failed to delete access token '%s' from database: %s", token, err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 }
