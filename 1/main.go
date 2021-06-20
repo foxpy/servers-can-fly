@@ -198,7 +198,12 @@ func tokenFromRequest(r *http.Request) (string, error) {
 		return "", errors.New("Cookie with access token must be supplied")
 	}
 	var token string
-	fmt.Sscanf(cookie[0], "sessionToken=%s", &token)
+	// TODO: switch to built-in "net/http" Cookie support
+	// because it turns out Cookie handling is not exactly trivial
+	_, err := fmt.Sscanf(cookie[0], "sessionToken=%s", &token)
+	if err != nil {
+		return "", errors.New("Token format is invalid")
+	}
 	if len(token) != 64 {
 		return "", errors.New("Token length is invalid")
 	}
